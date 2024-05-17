@@ -16,8 +16,20 @@
       {
         "command": "lily-assistant.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "lily-assistant.modifyDiff",
+        "title": "Modify Diff"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+            "command": "lily-assistant.modifyDiff",
+            "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "yarn run package",
