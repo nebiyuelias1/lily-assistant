@@ -30,66 +30,85 @@ export function activate(context: vscode.ExtensionContext) {
 			vscode.window.showErrorMessage('No active editor found');
 			return;
 		}
-	
+
 		const filePath = editor.document.fileName;
 
 		// Get the directory of the file
 		const fileDir = path.dirname(filePath);
-	
-		// Execute the Git diff command
-		child_process.exec(`git diff "${filePath}"`,  { cwd: fileDir }, (error, stdout, stderr) => {
-			if (error) {
-				vscode.window.showErrorMessage(`Error getting diff: ${error.message}`);
-				return;
-			}
-	
-			if (stderr) {
-				vscode.window.showErrorMessage(`Error getting diff: ${stderr}`);
-				return;
-			}
-	
-			// The diff is in stdout
-			console.log(stdout);
-			
-			const diffCheckFailed = true;
-			// Here you can add your diff checking logic
-			// If the diff check fails, suggest changes to the user
-			if (diffCheckFailed) {
-				const prompt = constructPrompt(PROMPT_TEMPLATE, stdout);
-				console.log(prompt);
-				generateOllamaResponse({
-					model: "lily",
-					prompt,
-					stream: false
-				}).then(response => {
-					vscode.window.showInformationMessage(response.response, { modal: true }, 'Apply Changes').then(async selectedAction => {
-							if (selectedAction === 'Apply Changes') {
-								// Apply the changes
-								const edit = new vscode.WorkspaceEdit();
-								const activeEditor = vscode.window.activeTextEditor;
-								if (activeEditor) {
-									const document = activeEditor.document;
-									const fullRange = new vscode.Range(
-										document.positionAt(0),
-										document.positionAt(document.getText().length)
-									);
-									// Extract code snippet within ```python ``` in the response
-									const regex = /^```(?:\w+)?\s*\n(.*?)(?=^```)```/msg;
-									const codeSnippet = regex.exec(response.response);
 
-									console.log('code snippet', codeSnippet);
-									if (!codeSnippet) {
-										vscode.window.showErrorMessage('No code snippet found in response');
-										return;
+		// Show progress notification
+		vscode.window.withProgress({
+			location: vscode.ProgressLocation.Notification,
+			title: 'Thinking...',
+			cancellable: true,
+		}, async (progress, token) => {
+			token.onCancellationRequested(() => {
+				console.log("User canceled the long running operation")
+			});
+
+			progress.report({ increment: 0 });
+
+			await new Promise((resolve, reject) => {
+				// Execute the Git diff command
+				child_process.exec(`git diff "${filePath}"`, { cwd: fileDir }, (error, stdout, stderr) => {
+					if (error) {
+						vscode.window.showErrorMessage(`Error getting diff: ${error.message}`);
+						return;
+					}
+
+					if (stderr) {
+						vscode.window.showErrorMessage(`Error getting diff: ${stderr}`);
+						return;
+					}
+
+					progress.report({ increment: 50 });
+
+					// The diff is in stdout
+					console.log('diff:', stdout);
+
+					const diffCheckFailed = true;
+					// Here you can add your diff checking logic
+					// If the diff check fails, suggest changes to the user
+					if (diffCheckFailed) {
+						const prompt = constructPrompt(PROMPT_TEMPLATE, stdout);
+						console.log(prompt);
+						generateOllamaResponse({
+							model: "lily",
+							prompt,
+							stream: false
+						}).then(response => {
+							progress.report({ increment: 100 });
+							vscode.window.showInformationMessage(response.response, { modal: true }, 'Apply Changes').then(async selectedAction => {
+								if (selectedAction === 'Apply Changes') {
+									// Apply the changes
+									const edit = new vscode.WorkspaceEdit();
+									const activeEditor = vscode.window.activeTextEditor;
+									if (activeEditor) {
+										const document = activeEditor.document;
+										const fullRange = new vscode.Range(
+											document.positionAt(0),
+											document.positionAt(document.getText().length)
+										);
+										// Extract code snippet within ```python ``` in the response
+										const regex = /^```(?:\w+)?\s*\n(.*?)(?=^```)```/msg;
+										const codeSnippet = regex.exec(response.response);
+
+										console.log('code snippet', codeSnippet);
+										if (!codeSnippet) {
+											vscode.window.showErrorMessage('No code snippet found in response');
+											return;
+										}
+										edit.replace(document.uri, fullRange, codeSnippet[1]);
+										vscode.workspace.applyEdit(edit);
+										resolve(codeSnippet[1]);
 									}
-									edit.replace(document.uri, fullRange, codeSnippet[1]);
-									vscode.workspace.applyEdit(edit);
-							}
-						}
-					});
-				});
+								}
+							});
+						});
 
-			}
+					}
+				});
+			});
 		});
 	});
 
@@ -98,4 +117,4 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() { }
